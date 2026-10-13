@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUT CARD • Robusta UFAC V166</title>
+<title>FUT CARD • Robusta UFAC V168</title>
 <style>
 :root{--bg:#05080d;--panel:#0b131b;--line:#173344;--cyan:#00baf2;--text:#f5f8fb;--muted:#8ea0ad}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 70% 0,#073448 0,#05080d 40%,#020406 100%);color:var(--text);font-family:Arial,Helvetica,sans-serif}
@@ -1571,14 +1571,14 @@ linear-gradient(rgba(0,72,42,.82),rgba(0,53,34,.88)),repeating-linear-gradient(t
 }
 
 /* V146 — Seleção da Rodada: somente cartas originais */
-.xiOriginalGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;align-items:start;justify-items:center;margin-top:14px}
+.xiOriginalGrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:start;justify-items:center;margin-top:14px}
 .xiOriginalGrid .xiExactSlot{width:118px;text-align:center;cursor:pointer;position:relative;overflow:visible;z-index:30}
 .xiOriginalGrid .xiExactCardMount{width:118px;height:172px;margin:0 auto;position:relative;display:block;overflow:hidden;z-index:31}
 .xiOriginalGrid .xiExactSlot .xiRole{margin-top:5px;font-size:9px;padding:4px 9px}
 @media(max-width:760px){.xiOriginalGrid{grid-template-columns:repeat(2,118px);gap:18px 22px;justify-content:center}.xiOriginalGrid .xiExactSlot{width:118px}.xiOriginalGrid .xiExactCardMount{width:118px;height:172px}}
 @media(max-width:390px){.xiOriginalGrid{grid-template-columns:repeat(2,108px);gap:14px 16px}.xiOriginalGrid .xiExactSlot{width:108px}.xiOriginalGrid .xiExactCardMount{width:108px;height:158px}}
 
-</style>
+@media(max-width:760px){.xiOriginalGrid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.xiOriginalGrid .xiExactSlot,.xiOriginalGrid .xiExactCardMount{width:100%;max-width:118px}}\n</style>
 
 <style>
 /* V133 — renderização da carta da Seleção da Rodada como um objeto inteiro */
@@ -1718,10 +1718,13 @@ linear-gradient(rgba(0,72,42,.82),rgba(0,53,34,.88)),repeating-linear-gradient(t
 @media(max-width:700px){.xiNameItem{min-height:58px;font-size:18px}}
 </style>
 
-<style id="v165-public-championship">
-.modePublic nav button.publicChampionshipBtn{
+<style id="v167-public-navigation">
+.modePublic nav button.publicChampionshipBtn,
+.modePublic nav button.organizerAreasBtn{
   display:inline-flex!important;
 }
+.modePublic nav button.organizerAreasBtn{white-space:nowrap}
+@media(max-width:700px){.modePublic nav button.organizerAreasBtn{font-size:12px;padding:8px 10px}}
 </style>
 
 </head>
@@ -1742,13 +1745,14 @@ linear-gradient(rgba(0,72,42,.82),rgba(0,53,34,.88)),repeating-linear-gradient(t
       <input id="adminPin" type="password" placeholder="Senha do Supabase" autocomplete="current-password">
       <button class="primary" onclick="checkAdminPin()">Entrar</button>
       <p id="loginStatus" class="pubSmall"></p>
+      <button type="button" onclick="enterPublic()">Voltar à área pública</button>
     </div>
   </div>
 </div>
 
 <header><div class="brand">FUT <b>CARD</b> • ROBUSTA UFAC</div><nav><button class="publicAccessBtn" onclick="enterPublic()">🌐 Público</button><button class="publicChampionshipBtn" onclick="show('publico',this);renderPublic()">🌐 Campeonato</button>
 <button class="on" onclick="show('inicio',this)">Início</button><button onclick="show('carta',this)">Editor</button><button onclick="show('jogadores',this)">Jogadores</button><button onclick="show('avaliacao',this)">Avaliação</button><button onclick="show('ranking',this)">Ranking</button><button onclick="show('admin',this)">Admin</button><button onclick="show('campeonato',this)">Campeonato</button>
-<span id="modeBadge" class="modeBadge">🛠️ desenvolvimento</span><button onclick="show('cards',this);renderCardsGallery()">🃏 Cartinhas</button></nav></header>
+<button class="organizerAreasBtn" onclick="enterAdmin()">🛠️ Áreas do painel do organizador</button><button onclick="show('cards',this);renderCardsGallery()">🃏 Cartinhas</button></nav></header>
 <main>
 
 <section id="cards" class="view">
@@ -3400,11 +3404,12 @@ function getRoundSelection(round){
     const p=candidates[0]||null;if(p)used.add(String(p.id));return p;
   };
   const gk=pick('Goleiro');
+  const fixo=pick('Fixo');
   const a1=pick('Ala');
   const a2=pick('Ala');
   const pivo=pick('Pivô');
   const rated=all.filter(p=>xiHasRoundEvaluation(p,current));
-  return {current,gk,alas:[a1,a2],pivo,rated};
+  return {current,gk,fixo,alas:[a1,a2],pivo,rated};
 }
 
 function roundSelectionCard(p,role,round){
@@ -3491,10 +3496,18 @@ const MODE_KEY='robustaFutCardModeV23';
 let appMode='admin';
 function enterPublic(){
   appMode='public';document.body.classList.add('modePublic');document.body.classList.remove('modeAdmin');
-  $('accessGate').style.display='none';applyAccessMode();show('publico',document.querySelector('nav button'));renderPublic();
+  $('accessGate').style.display='none';
+  const choices=document.querySelector('.accessChoices');if(choices)choices.style.display='grid';
+  const title=document.querySelector('#accessGate h1');if(title)title.textContent='Acesso ao sistema';
+  const subtitle=document.querySelector('#accessGate .accessBox > .sub');if(subtitle)subtitle.textContent='Entre como organizador ou acesse a área pública.';
+  applyAccessMode();show('publico',document.querySelector('.publicChampionshipBtn'));renderPublic();
 }
 function enterAdmin(){
+  $('accessGate').style.display='flex';
   $('adminPinBox').style.display='block';
+  const choices=document.querySelector('.accessChoices');if(choices)choices.style.display='none';
+  const title=document.querySelector('#accessGate h1');if(title)title.textContent='Painel do organizador';
+  const subtitle=document.querySelector('#accessGate .accessBox > .sub');if(subtitle)subtitle.textContent='Entre com seu e-mail e senha de administrador.';
   const status=$('loginStatus');if(status)status.textContent='Use o mesmo e-mail e senha cadastrados em Authentication → Users.';
 }
 async function checkAdminPin(){
@@ -3507,7 +3520,11 @@ async function checkAdminPin(){
   if(error){if(status)status.textContent='Login não realizado: '+error.message;return;}
   supabaseSession=data.session;
   appMode='admin';document.body.classList.add('modeAdmin');document.body.classList.remove('modePublic');
-  $('accessGate').style.display='none';applyAccessMode();
+  $('accessGate').style.display='none';
+  const choices=document.querySelector('.accessChoices');if(choices)choices.style.display='grid';
+  const title=document.querySelector('#accessGate h1');if(title)title.textContent='Acesso ao sistema';
+  const subtitle=document.querySelector('#accessGate .accessBox > .sub');if(subtitle)subtitle.textContent='Entre como organizador ou acesse a área pública.';
+  applyAccessMode();
   try{await loadStateFromSupabase();await hydrateImageStore();render();renderPublic();if(db.players.length)loadCard(db.players[0].id);if($('storageInfo'))$('storageInfo').textContent='✓ Conectado ao Supabase como administrador.';}catch(e){console.error(e);alert('Login feito, mas não foi possível carregar os dados online: '+e.message)}
 }
 function logoutMode(){
@@ -3626,11 +3643,16 @@ async function bootV163(){
   }
   try{await hydrateImageStore()}catch(e){console.error('hydrateImageStore',e)}
   document.body.classList.remove('modeAdmin','modePublic');
-  $('accessGate').style.display='flex';
+  // V167: abrir diretamente na área pública, mantendo o painel protegido por login.
+  appMode='public';
+  document.body.classList.add('modePublic');
+  $('accessGate').style.display='none';
+  applyAccessMode();
   render();renderPublic();
+  show('publico',document.querySelector('.publicChampionshipBtn'));
   supabaseClient.auth.getSession().then(async ({data})=>{
     if(data?.session){
-      supabaseSession=data.session;appMode='admin';$('accessGate').style.display='none';document.body.classList.add('modeAdmin');applyAccessMode();
+      supabaseSession=data.session;appMode='admin';$('accessGate').style.display='none';document.body.classList.remove('modePublic');document.body.classList.add('modeAdmin');applyAccessMode();
       try{await loadStateFromSupabase();await hydrateImageStore();render();renderPublic();}catch(e){console.error(e)}
     }
   });
