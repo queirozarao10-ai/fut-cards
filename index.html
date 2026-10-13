@@ -63,6 +63,10 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px s
 @media(max-width:700px){.cardFilters{grid-template-columns:1fr}.cardsGallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.miniName{font-size:14px}}@media(max-width:420px){.cardsGallery{grid-template-columns:1fr}.miniCard{max-width:310px;margin:auto;width:100%}}
 
 
+/* V169 — reserva espaço para evitar saltos enquanto a cartinha é montada */
+.galleryDeferredWrap{width:100%;max-width:430px;aspect-ratio:.68;min-height:180px;background:linear-gradient(145deg,#0b1720,#071019);border-radius:18px;overflow:hidden}
+.galleryDeferredWrap .galleryExactCard{width:100%!important;height:auto!important}
+
 /* V125 — galeria idêntica à carta do Editor */
 .cardsGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;align-items:start}
 .galleryExactItem{min-width:0;cursor:pointer;display:flex;justify-content:center;outline:none}
@@ -3218,6 +3222,42 @@ function cloneEditorCardForPlayer(p){
   }
 }
 
+// V169 — monta as cartinhas conforme se aproximam da tela, reduzindo picos de CPU/memória em celulares.
+function renderCardsWithDeferredMount(el,players,onOpen){
+  el.innerHTML='';
+  let observer=null;
+  if('IntersectionObserver' in window){
+    observer=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        if(!entry.isIntersecting)return;
+        const article=entry.target;
+        observer.unobserve(article);
+        mountGalleryCard(article,article._galleryPlayer);
+      });
+    },{root:null,rootMargin:'450px 0px',threshold:0.01});
+  }
+  players.forEach(p=>{
+    const article=document.createElement('article');
+    article.className='galleryExactItem';
+    article.title='Abrir cartinha de '+(p.name||'jogador');
+    article.onclick=()=>onOpen(p.id);
+    const wrap=document.createElement('div');
+    wrap.className='galleryExactWrap galleryDeferredWrap';
+    wrap.setAttribute('aria-label','Cartinha de '+(p.name||'jogador'));
+    article.appendChild(wrap);
+    article._galleryPlayer=p;
+    el.appendChild(article);
+    if(observer)observer.observe(article);else mountGalleryCard(article,p);
+  });
+}
+function mountGalleryCard(article,p){
+  if(!article||article.dataset.cardMounted==='1'||!p)return;
+  const wrap=article.querySelector('.galleryExactWrap');if(!wrap)return;
+  const clone=cloneEditorCardForPlayer(p);
+  if(clone){clone.loading='lazy';wrap.appendChild(clone);}
+  article.dataset.cardMounted='1';
+}
+
 function renderCardsGallery(){
   const el=$('cardsGallery');if(!el)return;
   const q=($('cardSearch')?.value||'').toLowerCase(),cat=$('cardCategory')?.value||'all',pos=$('cardPosition')?.value||'all';
@@ -3232,19 +3272,7 @@ function renderCardsGallery(){
     return;
   }
 
-  el.innerHTML='';
-  ps.forEach(p=>{
-    const article=document.createElement('article');
-    article.className='galleryExactItem';
-    article.title='Abrir cartinha de '+(p.name||'jogador');
-    article.onclick=()=>openGalleryCard(p.id);
-    const wrap=document.createElement('div');
-    wrap.className='galleryExactWrap';
-    const clone=cloneEditorCardForPlayer(p);
-    if(clone)wrap.appendChild(clone);
-    article.appendChild(wrap);
-    el.appendChild(article);
-  });
+  renderCardsWithDeferredMount(el,ps,openGalleryCard);
 }
 
 function publicTab(tab,btn){
@@ -3304,7 +3332,7 @@ function getPublicScorers(){
 function renderPublicScorersFull(){
   const el=$('pubScorersFull');if(!el)return;
   const scorers=getPublicScorers();
-  el.innerHTML=scorers.length?scorers.map((x,i)=>`<div class="pubRow"><b>${i+1}</b><span><b>${esc(x.p.name)}</b><br><span class="pubSmall">${esc(x.p.equipe||'')}</span></span><b>${x.g} ${x.g===1?'gol':'gols'}</b></div>`).join(''):'<span class="sub">Nenhum gol registrado.</span>';
+  el.innerHTML=scorers.length?scorers.slice(0,3).map((x,i)=>`<div class="pubRow"><b>${i+1}</b><span><b>${esc(x.p.name)}</b><br><span class="pubSmall">${esc(x.p.equipe||'')}</span></span><b>${x.g} ${x.g===1?'gol':'gols'}</b></div>`).join(''):'<span class="sub">Nenhum gol registrado.</span>';
 }
 function getPublicGoalkeepers(){
   return db.players.filter(p=>p.pos==='Goleiro').sort((a,b)=>Number(b.nota||0)-Number(a.nota||0)||String(a.name||'').localeCompare(String(b.name||''))).slice(0,3);
@@ -3346,12 +3374,7 @@ function renderPublicCards(){
     return (!q||String(p.name||'').toLowerCase().includes(q)||(p.equipe||'').toLowerCase().includes(q)) && (cat==='all'||c===cat) && (pos==='all'||p.pos===pos);
   }).sort((a,b)=>Number(b.nota||0)-Number(a.nota||0));
   if(!ps.length){el.innerHTML='<div class="sub">Nenhuma cartinha encontrada.</div>';return;}
-  el.innerHTML='';
-  ps.forEach(p=>{
-    const article=document.createElement('article');article.className='galleryExactItem';article.title='Abrir cartinha de '+(p.name||'jogador');article.onclick=()=>openPublicPlayerCard(p.id);
-    const wrap=document.createElement('div');wrap.className='galleryExactWrap';
-    const clone=cloneEditorCardForPlayer(p);if(clone)wrap.appendChild(clone);article.appendChild(wrap);el.appendChild(article);
-  });
+  renderCardsWithDeferredMount(el,ps,openPublicPlayerCard);
 }
 
 function xiRoundScore(p,round){
