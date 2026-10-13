@@ -1801,7 +1801,7 @@ linear-gradient(rgba(0,72,42,.82),rgba(0,53,34,.88)),repeating-linear-gradient(t
 
   <div id="pubMvp" class="publicPane" style="display:none"><div class="panel"><button class="publicBackBtn" onclick="publicTab('overview')">← Voltar</button><h2>👑 MVP da rodada</h2><p class="sub">Melhor avaliação individual da rodada selecionada.</p><div id="pubMvpFull"></div></div></div>
 
-  <div id="pubXi" class="publicPane" style="display:none"><div class="panel"><button class="publicBackBtn" onclick="publicTab('overview')">← Voltar</button><h2>⭐ Seleção da rodada</h2><p class="sub">1 goleiro, 2 alas e 1 pivô, escolhidos pelas maiores notas da rodada. Toque no nome para abrir a cartinha.</p><div class="publicToolbar"><label style="margin:0;min-width:180px">Rodada<select id="pubXiRound" onchange="renderPublicXIFull()"></select></label></div><div id="pubXIFull"></div></div></div>
+  <div id="pubXi" class="publicPane" style="display:none"><div class="panel"><button class="publicBackBtn" onclick="publicTab('overview')">← Voltar</button><h2>⭐ Seleção da rodada</h2><p class="sub">1 goleiro, 1 fixo, 2 alas e 1 pivô, escolhidos pelas maiores notas da rodada. Toque no nome para abrir a cartinha.</p><div class="publicToolbar"><label style="margin:0;min-width:180px">Rodada<select id="pubXiRound" onchange="renderPublicXIFull()"></select></label></div><div id="pubXIFull"></div></div></div>
 
   <div id="pubGk" class="publicPane" style="display:none"><div class="panel"><button class="publicBackBtn" onclick="publicTab('overview')">← Voltar</button><h2>🧤 Melhores goleiros — Top 3</h2><p class="sub">Goleiros ordenados pelo Overall atual. Toque no nome para abrir a cartinha.</p><div id="pubGkFull"></div></div></div>
 
@@ -3367,11 +3367,12 @@ function getPublicRoundSelection(round){
     const p=candidates[0]||null;if(p)used.add(String(p.id));return p;
   };
   const gk=pick('Goleiro');
+  const fixo=pick('Fixo');
   const a1=pick('Ala');
   const a2=pick('Ala');
   const pivo=pick('Pivô');
   const rated=all.filter(p=>xiHasRoundEvaluation(p,current));
-  return {current,rated,gk,alas:[a1,a2],pivo};
+  return {current,rated,gk,fixo,alas:[a1,a2],pivo};
 }
 
 function getPublicRoundData(round){
@@ -3453,8 +3454,8 @@ function renderPublicXIFull(){
   renderXIRoundOptions('pubXiRound');
   const round=Number($('pubXiRound')?.value)||Number(db.round)||1;
   const sel=getPublicRoundSelection(round);
-  const players=[sel.gk,sel.alas[0],sel.alas[1],sel.pivo];
-  const roles=['Goleiro','Ala','Ala','Pivô'];
+  const players=[sel.gk,sel.fixo,sel.alas[0],sel.alas[1],sel.pivo];
+  const roles=['Goleiro','Fixo','Ala','Ala','Pivô'];
   el.innerHTML='<div class="xiNameList">'+players.map((p,i)=>{
     if(!p)return `<div class="xiNameItem empty"><span>Nenhum jogador • ${roles[i]}</span></div>`;
     const id=String(p.id).replace(/'/g,"\\'");
@@ -3574,11 +3575,12 @@ function buildRoundXIPitch(round){
   return `<div class="roundXIWrap xiRoundWrap">
     <div class="xiOriginalGrid">
       ${roundSelectionCard(sel.gk,'GOLEIRO',current)}
+      ${roundSelectionCard(sel.fixo,'FIXO',current)}
       ${roundSelectionCard(a1,'ALA',current)}
       ${roundSelectionCard(a2,'ALA',current)}
       ${roundSelectionCard(sel.pivo,'PIVÔ',current)}
     </div>
-    <div class="xiInfo"><b>Seleção da Rodada ${current}</b><div class="sub" style="margin-top:6px">Maiores notas da rodada: 1 goleiro, 2 alas e 1 pivô. Clique em uma carta para abrir o jogador.</div><div class="sub" style="margin-top:8px">${sel.rated.length} jogador(es) com avaliação na Rodada ${current}.</div></div>
+    <div class="xiInfo"><b>Seleção da Rodada ${current}</b><div class="sub" style="margin-top:6px">Maiores notas da rodada: 1 goleiro, 1 fixo, 2 alas e 1 pivô. Clique em uma carta para abrir o jogador.</div><div class="sub" style="margin-top:8px">${sel.rated.length} jogador(es) com avaliação na Rodada ${current}.</div></div>
   </div>`;
 }
 
