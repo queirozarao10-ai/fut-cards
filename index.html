@@ -1924,6 +1924,15 @@ linear-gradient(rgba(0,72,42,.82),rgba(0,53,34,.88)),repeating-linear-gradient(t
     <div id="matchesList"></div>
     <div class="actions" style="margin-top:12px"><button onclick="goPreviousRound()">↩️ Voltar à rodada anterior</button></div>
   </div>
+  <div class="panel" style="margin-top:18px;border-left:4px solid #ff6262">
+    <h2>⚖️ Medidas disciplinares</h2>
+    <p class="sub">Anule uma partida para ela deixar de contar na classificação ou aplique uma penalidade de pontos a uma equipe. As ações ficam registradas e a penalidade pode ser desfeita.</p>
+    <label>Equipe que perderá pontos</label><select id="deductionTeam"></select>
+    <label>Quantidade de pontos a retirar</label><input id="deductionPoints" type="number" min="1" step="1" value="2">
+    <label>Motivo da penalidade</label><input id="deductionReason" maxlength="240" placeholder="Ex.: decisão disciplinar da organização">
+    <div class="actions"><button class="red" onclick="deductTeamPoints()">Retirar pontos</button></div>
+    <h3 style="margin-top:16px">Histórico de penalidades</h3><div id="deductionHistory" class="players"><span class="sub">Nenhuma penalidade registrada.</span></div>
+  </div>
   <div class="panel">
     <h2>🏆 Classificação automática</h2>
     <p class="sub">A tabela atualiza sozinha após cada resultado. Vitória = 3 pts • Empate = 1 pt • Derrota = 0 pt. Desempate: pontos → vitórias → confronto direto → saldo de gols.</p>
@@ -1974,6 +1983,7 @@ if(!db)db={players:[],teams:[],matches:[],round:1,config:{camp:'Campeonato Unive
 db.players=Array.isArray(db.players)?db.players:[];
 db.teams=Array.isArray(db.teams)?db.teams:[];
 db.matches=Array.isArray(db.matches)?db.matches:[];
+db.pointDeductions=Array.isArray(db.pointDeductions)?db.pointDeductions:[];
 // V81: partidas geradas aguardam resultado; registros antigos sem flag continuam como encerrados.
 db.matches.forEach(m=>{if(typeof m.played!=='boolean')m.played=true;});
 db.config=db.config||{camp:'Campeonato Universitário de Futsal'};db.config.adminPin=db.config.adminPin||'1234';
@@ -2734,11 +2744,37 @@ function generateGroupStage(){
   let added=0;pairs.forEach(x=>{const key=[x.a,x.b].sort().join('|');if(!existing.has(key)){db.matches.push({id:'m_'+Date.now()+Math.random().toString(36).slice(2,7),round:x.round,a:x.a,b:x.b,sa:0,sb:0,phase:'group',group:x.group,note:`Grupo ${x.group} • Rodada ${x.round}`,played:false,date:new Date().toISOString()});added++;}});
   save();renderChampionship();render();alert(`Fase de grupos pronta: ${added} partida(s) adicionada(s).`);
 }
+function teamPointPenalty(teamId){return db.pointDeductions.filter(d=>d.teamId===teamId&&!d.cancelled).reduce((sum,d)=>sum+Math.max(0,Number(d.points)||0),0)}
+async function deductTeamPoints(){
+  const teamId=$('deductionTeam')?.value, points=Math.floor(Number($('deductionPoints')?.value)||0), reason=String($('deductionReason')?.value||'').trim();
+  const team=db.teams.find(t=>t.id===teamId);if(!team){alert('Selecione uma equipe.');return}
+  if(points<1){alert('Informe pelo menos 1 ponto para retirar.');return}
+  if(!reason){alert('Informe o motivo da penalidade para manter o registro transparente.');return}
+  if(!confirm(`Confirma retirar ${points} ponto(s) de ${team.name}?\nMotivo: ${reason}`))return;
+  db.pointDeductions.push({id:'pd_'+Date.now()+Math.random().toString(36).slice(2,6),teamId,points,reason,date:new Date().toISOString(),cancelled:false});
+  if(await saveDB()) {renderChampionship();render();$('deductionReason').value='';toast(`Penalidade aplicada a ${team.name}.`)}
+}
+async function undoPointDeduction(id){
+  const d=db.pointDeductions.find(x=>x.id===id);if(!d||d.cancelled)return;
+  const team=db.teams.find(t=>t.id===d.teamId);if(!confirm(`Desfazer a retirada de ${d.points} ponto(s) de ${team?.name||'equipe'}?`))return;
+  d.cancelled=true;d.cancelledAt=new Date().toISOString();if(await saveDB()){renderChampionship();render();toast('Penalidade desfeita.')}
+}
+async function annulMatch(id){
+  const m=db.matches.find(x=>x.id===id);if(!m)return;
+  if(m.annulled){if(!confirm('Reativar esta partida e voltar a contar o resultado na classificação?'))return;m.annulled=false;m.annulledAt=null;}
+  else {const a=db.teams.find(t=>t.id===m.a)?.name||'Equipe A',b=db.teams.find(t=>t.id===m.b)?.name||'Equipe B';const reason=prompt(`Motivo da anulação de ${a} × ${b}:`,'Decisão da organização');if(reason===null)return;if(!reason.trim()){alert('Informe o motivo da anulação.');return}if(!confirm(`A partida será excluída da classificação e dos resultados públicos.\nMotivo: ${reason.trim()}\n\nConfirma?`))return;m.annulled=true;m.annulledAt=new Date().toISOString();m.annulReason=reason.trim();}
+  if(await saveDB()){renderChampionship();render();renderPublic();toast(m.annulled?'Partida anulada.':'Partida reativada.')}
+}
+function renderPointDeductions(){
+  const sel=$('deductionTeam');if(sel){const old=sel.value;sel.innerHTML=db.teams.map(t=>`<option value="${t.id}">${esc(t.name)} • Grupo ${esc(t.group||'A')}</option>`).join('');if(db.teams.some(t=>t.id===old))sel.value=old;}
+  const el=$('deductionHistory');if(!el)return;const items=[...db.pointDeductions].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  el.innerHTML=items.length?items.map(d=>{const t=db.teams.find(x=>x.id===d.teamId);return `<div class="player"><strong>${esc(t?.name||'Equipe removida')} • ${d.cancelled?'Penalidade desfeita':`−${Number(d.points)||0} ponto(s)`}</strong><small>${esc(d.reason||'Sem motivo informado')} • ${d.date?new Date(d.date).toLocaleString('pt-BR'):''}</small>${!d.cancelled?`<div class="actions"><button class="secondary" onclick="undoPointDeduction('${d.id}')">Desfazer penalidade</button></div>`:''}</div>`}).join(''):'<span class="sub">Nenhuma penalidade registrada.</span>';
+}
 function teamStandings(group){
-  const rows=db.teams.filter(t=>(t.group||'A')===group).map(t=>{let J=0,V=0,E=0,D=0,GP=0,GC=0;db.matches.filter(m=>(m.phase||'group')==='group'&&m.played!==false&&(m.a===t.id||m.b===t.id)).forEach(m=>{const isA=m.a===t.id,gf=Number(isA?m.sa:m.sb)||0,gc=Number(isA?m.sb:m.sa)||0;J++;GP+=gf;GC+=gc;if(gf>gc)V++;else if(gf===gc)E++;else D++;});return {t,J,V,E,D,GP,GC,SG:GP-GC,PTS:V*3+E};});
+  const rows=db.teams.filter(t=>(t.group||'A')===group).map(t=>{let J=0,V=0,E=0,D=0,GP=0,GC=0;db.matches.filter(m=>(m.phase||'group')==='group'&&m.played!==false&&!m.annulled&&(m.a===t.id||m.b===t.id)).forEach(m=>{const isA=m.a===t.id,gf=Number(isA?m.sa:m.sb)||0,gc=Number(isA?m.sb:m.sa)||0;J++;GP+=gf;GC+=gc;if(gf>gc)V++;else if(gf===gc)E++;else D++;});return {t,J,V,E,D,GP,GC,SG:GP-GC,PTS:V*3+E-teamPointPenalty(t.id)};});
   // Desempate da fase de grupos: 1) pontos, 2) vitórias, 3) confronto direto, 4) saldo de gols.
   rows.forEach(r=>{r.H2H=0;});
-  rows.forEach(r=>{rows.forEach(o=>{if(r===o||r.PTS!==o.PTS||r.V!==o.V)return;db.matches.filter(m=>(m.phase||'group')==='group'&&m.played!==false&&((m.a===r.t.id&&m.b===o.t.id)||(m.b===r.t.id&&m.a===o.t.id))).forEach(m=>{const isA=m.a===r.t.id,gf=Number(isA?m.sa:m.sb)||0,gc=Number(isA?m.sb:m.sa)||0;if(gf>gc)r.H2H+=3;else if(gf===gc)r.H2H+=1;});});});
+  rows.forEach(r=>{rows.forEach(o=>{if(r===o||r.PTS!==o.PTS||r.V!==o.V)return;db.matches.filter(m=>(m.phase||'group')==='group'&&m.played!==false&&!m.annulled&&((m.a===r.t.id&&m.b===o.t.id)||(m.b===r.t.id&&m.a===o.t.id))).forEach(m=>{const isA=m.a===r.t.id,gf=Number(isA?m.sa:m.sb)||0,gc=Number(isA?m.sb:m.sa)||0;if(gf>gc)r.H2H+=3;else if(gf===gc)r.H2H+=1;});});});
   return rows.sort((x,y)=>y.PTS-x.PTS||y.V-x.V||y.H2H-x.H2H||y.SG-x.SG||y.GP-x.GP);
 }
 function knockoutWinner(m){if(!m)return null;if(Number(m.sa)>Number(m.sb))return m.a;if(Number(m.sb)>Number(m.sa))return m.b;return m.penaltyWinner||null}
@@ -2789,7 +2825,7 @@ function deleteMatch(id){
   db.matches=db.matches.filter(m=>m.id!==id);save();renderChampionship();render();
 }
 function matchHasAllEvaluations(m){
-  if(!m || m.played===false)return false;
+  if(!m)return false;if(m.annulled)return true;if(m.played===false)return false;
   const ta=db.teams.find(t=>t.id===m.a),tb=db.teams.find(t=>t.id===m.b);
   const players=db.players.filter(p=>p.equipe===ta?.name||p.equipe===tb?.name);
   if(!players.length)return false;
@@ -2797,12 +2833,12 @@ function matchHasAllEvaluations(m){
 }
 function roundReady(round){
   const rm=db.matches.filter(m=>(m.phase||'group')==='group'&&Number(m.round||1)===Number(round));
-  return rm.length>0&&rm.every(m=>m.played!==false)&&rm.every(m=>matchHasAllEvaluations(m));
+  return rm.length>0&&rm.every(m=>m.annulled||m.played!==false)&&rm.every(m=>matchHasAllEvaluations(m));
 }
 function getEvaluationMatches(){
-  const groups=db.matches.filter(m=>(m.phase||'group')==='group');
+  const groups=db.matches.filter(m=>(m.phase||'group')==='group'&&!m.annulled);
   const currentRound=Math.max(1,Math.min(3,Number(db.round)||1));
-  const current=groups.filter(m=>Number(m.round||1)===currentRound);
+  const current=groups.filter(m=>Number(m.round||1)===currentRound&&!m.annulled);
   const available=[...current];
   const groupComplete=[1,2,3].every(r=>roundReady(r));
   if(groupComplete)available.push(...db.matches.filter(m=>m.phase==='semi'||m.phase==='final'));
@@ -2829,7 +2865,7 @@ function goPreviousRound(){
   db.round=current-1;if(saveDB()){renderChampionship();refreshEvalMatch();toast(`Voltamos para a Rodada ${db.round}.`);}
 }
 function renderRoundControl(){
-  const el=$('roundControlStatus');if(!el)return;const current=Math.max(1,Math.min(3,Number(db.round)||1));const rm=db.matches.filter(m=>(m.phase||'group')==='group'&&Number(m.round||1)===current);const results=rm.filter(m=>m.played!==false).length;const evals=rm.filter(m=>m.played!==false&&matchHasAllEvaluations(m)).length;const ready=rm.length>0&&results===rm.length&&evals===rm.length;el.innerHTML=`<b>Rodada atual: ${current}</b><br>${results}/${rm.length||0} partidas com resultado • ${evals}/${rm.length||0} partidas com avaliações completas<br>${ready?(current<3?'🟢 Tudo pronto. A próxima rodada pode ser liberada.':'🏁 Fase de grupos pronta para o mata-mata.'):'🟡 Finalize os resultados e salve as avaliações de todos os jogadores.'}`;
+  const el=$('roundControlStatus');if(!el)return;const current=Math.max(1,Math.min(3,Number(db.round)||1));const rm=db.matches.filter(m=>(m.phase||'group')==='group'&&Number(m.round||1)===current);const results=rm.filter(m=>m.annulled||m.played!==false).length;const evals=rm.filter(m=>m.annulled||m.played!==false&&matchHasAllEvaluations(m)).length;const ready=rm.length>0&&results===rm.length&&evals===rm.length;el.innerHTML=`<b>Rodada atual: ${current}</b><br>${results}/${rm.length||0} partidas com resultado • ${evals}/${rm.length||0} partidas com avaliações completas<br>${ready?(current<3?'🟢 Tudo pronto. A próxima rodada pode ser liberada.':'🏁 Fase de grupos pronta para o mata-mata.'):'🟡 Finalize os resultados e salve as avaliações de todos os jogadores.'}`;
 }
 
 
@@ -3050,6 +3086,7 @@ function toggleTeamPlayers(teamId){
 
 function renderChampionship(){
   if(!$('campeonato'))return;
+  renderPointDeductions();
   $('teamsList').innerHTML=db.teams.length?db.teams.map(t=>`<div class="player teamCard" style="border-left:5px solid ${esc(t.color||'#00b8ee')};" onclick="toggleTeamPlayers('${t.id}')"><div style="display:flex;align-items:center;gap:10px;min-width:0"><span style="width:42px;height:42px;border-radius:10px;background:${esc(t.color||'#00b8ee')};display:flex;align-items:center;justify-content:center;border:1px solid #fff4;overflow:hidden;flex:0 0 auto">${t.logo?`<img src="${t.logo}" style="width:100%;height:100%;object-fit:contain">`:'🏆'}</span><div style="min-width:0"><strong>${esc(t.name)}</strong><small>Grupo ${esc(t.group||'A')} • ${esc(t.short)} • ${db.players.filter(p=>p.equipe===t.name).length} jogador(es)</small></div></div><div class="actions" onclick="event.stopPropagation()"><button onclick="editTeam('${t.id}')">Editar</button><label class="fileBtn">Logo<input type="file" accept="image/*" hidden onchange="changeTeamLogo('${t.id}',this)"></label><button class="secondary" type="button" onclick="toggleTeamPlayers('${t.id}')">Ver jogadores</button><button class="red" onclick="deleteTeam('${t.id}')">Excluir</button></div><div id="teamPlayers_${t.id}" class="teamPlayersPanel" style="display:none;grid-column:1/-1;margin-top:10px;padding-top:12px;border-top:1px solid #234;background:#071018;border-radius:12px"></div></div>`).join(''):'<span class="sub">Nenhuma equipe cadastrada.</span>';
   const opts=db.teams.map(t=>`<option value="${t.id}">${esc(t.name)} • Grupo ${esc(t.group||'A')}</option>`).join('');
   if($('matchA'))$('matchA').innerHTML=opts;
@@ -3063,16 +3100,16 @@ function renderChampionship(){
   let activeRound=Math.max(1,Math.min(3,Number(db.round)||1));
   if(availableRounds.length && !availableRounds.includes(activeRound)) activeRound=availableRounds[0];
   const activeGroupMatches=groupMatches.filter(m=>Number(m.round||1)===activeRound);
-  const roundProgress=(r)=>{const rm=groupMatches.filter(m=>Number(m.round||1)===r);const results=rm.filter(m=>m.played!==false).length;const evaluated=rm.filter(m=>m.played!==false&&matchHasAllEvaluations(m)).length;return {rm,results,evaluated,ready:rm.length>0&&results===rm.length&&evaluated===rm.length};};
+  const roundProgress=(r)=>{const rm=groupMatches.filter(m=>Number(m.round||1)===r);const results=rm.filter(m=>m.annulled||m.played!==false).length;const evaluated=rm.filter(m=>m.annulled||m.played!==false&&matchHasAllEvaluations(m)).length;return {rm,results,evaluated,ready:rm.length>0&&results===rm.length&&evaluated===rm.length};};
   const prog=roundProgress(activeRound);
   const knockoutMatches=db.matches.filter(m=>m.phase==='semi'||m.phase==='final').sort((a,b)=>Number(a.round||0)-Number(b.round||0));
   let matchesHtml='';
   if(activeGroupMatches.length){
     matchesHtml+=`<div class="player" style="border-left:4px solid #00b8ee;margin-bottom:10px"><strong>FASE DE GRUPOS • RODADA ${activeRound}</strong><small>${prog.results}/${activeGroupMatches.length} partidas com resultado • ${prog.evaluated}/${activeGroupMatches.length} partidas com avaliações completas.${activeRound<3?' A Rodada '+(activeRound+1)+' só será liberada no Admin após salvar todos esses dados.':''}</small></div>`;
-    matchesHtml+=activeGroupMatches.map(m=>{const a=db.teams.find(t=>t.id===m.a),b=db.teams.find(t=>t.id===m.b);const phase=`Grupo ${m.group||a?.group||''}`;const evalOk=m.played!==false&&matchHasAllEvaluations(m);return `<div class="player"><strong>${esc(phase)} • R${m.round||1}: ${esc(a?.name||'Equipe')} ${m.sa} × ${m.sb} ${esc(b?.name||'Equipe')}</strong><small>${esc(m.note||'Partida')} • ${m.played===false?'⏳ Aguardando resultado':evalOk?'✅ Resultado + avaliações salvos':'🟡 Resultado lançado • aguardando avaliações'}</small><div class="actions"><button onclick="editMatch('${m.id}')">Lançar/editar resultado</button><button class="red" onclick="deleteMatch('${m.id}')">Excluir</button></div></div>`;}).join('');
+    matchesHtml+=activeGroupMatches.map(m=>{const a=db.teams.find(t=>t.id===m.a),b=db.teams.find(t=>t.id===m.b);const phase=`Grupo ${m.group||a?.group||''}`;const evalOk=m.played!==false&&matchHasAllEvaluations(m);return `<div class="player" style="${m.annulled?'opacity:.7;border-left:4px solid #ff6262':''}"><strong>${esc(phase)} • R${m.round||1}: ${esc(a?.name||'Equipe')} ${m.sa} × ${m.sb} ${esc(b?.name||'Equipe')} ${m.annulled?'• ANULADA':''}</strong><small>${esc(m.note||'Partida')} • ${m.annulled?`⛔ Anulada${m.annulReason?': '+esc(m.annulReason):''} — não conta na classificação`:m.played===false?'⏳ Aguardando resultado':evalOk?'✅ Resultado + avaliações salvos':'🟡 Resultado lançado • aguardando avaliações'}</small><div class="actions">${!m.annulled?`<button onclick="editMatch('${m.id}')">Lançar/editar resultado</button>`:''}<button class="secondary" onclick="annulMatch('${m.id}')">${m.annulled?'Reativar partida':'Anular partida'}</button><button class="red" onclick="deleteMatch('${m.id}')">Excluir</button></div></div>`;}).join('');
   }else if(groupMatches.length){matchesHtml+='<div class="player"><strong>FASE DE GRUPOS CONCLUÍDA</strong><small>As 3 rodadas foram encerradas. As partidas de mata-mata aparecem abaixo.</small></div>';}
   else{matchesHtml+='<span class="sub">Gere a fase de grupos para criar as partidas.</span>';}
-  if(knockoutMatches.length){matchesHtml+='<div class="player" style="margin-top:12px;border-left:4px solid #f5c84c"><strong>🏆 MATA-MATA</strong><small>Semifinais e final</small></div>';matchesHtml+=knockoutMatches.map(m=>{const a=db.teams.find(t=>t.id===m.a),b=db.teams.find(t=>t.id===m.b);const phase=m.phase==='semi'?(m.note||'Semifinal'):'Final';return `<div class="player"><strong>${esc(phase)}: ${esc(a?.name||'Equipe')} ${m.sa} × ${m.sb} ${esc(b?.name||'Equipe')}</strong><small>${m.played===false?'⏳ Aguardando resultado':'✅ Encerrada'}${m.penaltyWinner?` • Pênaltis: ${esc(db.teams.find(t=>t.id===m.penaltyWinner)?.name||'')}`:''}</small><div class="actions"><button onclick="editMatch('${m.id}')">Lançar/editar resultado</button><button class="red" onclick="deleteMatch('${m.id}')">Excluir</button></div></div>`;}).join('');}
+  if(knockoutMatches.length){matchesHtml+='<div class="player" style="margin-top:12px;border-left:4px solid #f5c84c"><strong>🏆 MATA-MATA</strong><small>Semifinais e final</small></div>';matchesHtml+=knockoutMatches.map(m=>{const a=db.teams.find(t=>t.id===m.a),b=db.teams.find(t=>t.id===m.b);const phase=m.phase==='semi'?(m.note||'Semifinal'):'Final';return `<div class="player" style="${m.annulled?'opacity:.7;border-left:4px solid #ff6262':''}"><strong>${esc(phase)}: ${esc(a?.name||'Equipe')} ${m.sa} × ${m.sb} ${esc(b?.name||'Equipe')} ${m.annulled?'• ANULADA':''}</strong><small>${m.annulled?`⛔ Anulada${m.annulReason?': '+esc(m.annulReason):''}`:m.played===false?'⏳ Aguardando resultado':'✅ Encerrada'}${m.penaltyWinner?` • Pênaltis: ${esc(db.teams.find(t=>t.id===m.penaltyWinner)?.name||'')}`:''}</small><div class="actions">${!m.annulled?`<button onclick="editMatch('${m.id}')">Lançar/editar resultado</button>`:''}<button class="secondary" onclick="annulMatch('${m.id}')">${m.annulled?'Reativar partida':'Anular partida'}</button><button class="red" onclick="deleteMatch('${m.id}')">Excluir</button></div></div>`;}).join('');}
   $('matchesList').innerHTML=matchesHtml;
   const renderGroup=(g)=>{const table=teamStandings(g);return table.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(x.t.name)}</b></td><td>${x.J}</td><td>${x.V}</td><td>${x.E}</td><td>${x.D}</td><td>${x.GP}</td><td>${x.GC}</td><td>${x.SG}</td><td><b>${x.PTS}</b></td></tr>`).join('')||`<tr><td colspan="10">Grupo ${g} sem equipes.</td></tr>`};
   $('standings').innerHTML=`<tr><td colspan="10"><b>GRUPO A</b></td></tr>${renderGroup('A')}<tr><td colspan="10"><b>GRUPO B</b></td></tr>${renderGroup('B')}`;
@@ -3140,14 +3177,37 @@ function restoreData(input){
   try{
    const x=JSON.parse(r.result);
    if(!Array.isArray(x.players)||!Array.isArray(x.teams)||!Array.isArray(x.matches))throw new Error('estrutura');
-   db=x;
-   db.players=db.players.map(p=>({...p,hist:Array.isArray(p.hist)?p.hist:[],nota:Number(p.nota)||Number(p.inicial)||70,inicial:Number(p.inicial)||Number(p.nota)||70}));
-   db.teams=db.teams.map(t=>({...t,id:t.id||'t_'+Date.now()+Math.random().toString(36).slice(2,7)}));
-   db.matches=db.matches.map(m=>({...m,id:m.id||'m_'+Date.now()+Math.random().toString(36).slice(2,7),events:Array.isArray(m.events)?m.events:[]}));
-   db.config={camp:'Campeonato Universitário de Futsal',...(db.config||{})};
-   db.round=Math.max(1,Number(db.round)||1);
-   if(await saveDB()){render();renderChampionship();toast('Backup restaurado com sucesso!')}
-  }catch(e){console.error(e);alert('Backup inválido ou incompatível.')}
+   if(!confirm('Recuperação segura: os registros do backup serão adicionados apenas quando o ID ainda não existir. Registros atuais com o mesmo ID serão preservados. Continuar?')){input.value='';return;}
+   const current=db&&typeof db==='object'?db:{};
+   const mergeById=(existing,incoming,prefix)=>{
+     const out=Array.isArray(existing)?existing.slice():[];
+     const ids=new Set(out.map(v=>String(v?.id??'')));
+     let added=0,kept=0;
+     for(const item of incoming){
+       const id=String(item?.id??'');
+       if(id && ids.has(id)){kept++;continue;}
+       const copy={...item};
+       if(!id)copy.id=prefix+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,9);
+       out.push(copy);ids.add(String(copy.id));added++;
+     }
+     return {items:out,added,kept};
+   };
+   const tm=mergeById(current.teams,x.teams,'t');
+   const pm=mergeById(current.players,x.players,'p');
+   const mm=mergeById(current.matches,x.matches,'m');
+   db={...x,...current,
+     teams:tm.items.map(t=>({...t})),
+     players:pm.items.map(p=>({...p,hist:Array.isArray(p.hist)?p.hist:[],nota:Number(p.nota)||Number(p.inicial)||70,inicial:Number(p.inicial)||Number(p.nota)||70})),
+     matches:mm.items.map(m=>({...m,events:Array.isArray(m.events)?m.events:[]})),
+     config:{...(x.config||{}),...(current.config||{})},
+     round:Math.max(1,Number(current.round)||Number(x.round)||1),
+     pointDeductions:Array.isArray(current.pointDeductions)?current.pointDeductions:(Array.isArray(x.pointDeductions)?x.pointDeductions:[])
+   };
+   if(await saveDB()){
+     render();renderChampionship();
+     alert('Recuperação concluída sem substituir registros existentes.\nJogadores adicionados: '+pm.added+' (IDs já existentes preservados: '+pm.kept+').\nEquipes adicionadas: '+tm.added+' (preservadas: '+tm.kept+').\nPartidas adicionadas: '+mm.added+' (preservadas: '+mm.kept+').');
+   }
+  }catch(e){console.error(e);alert('Não foi possível importar o backup. Nenhuma recuperação foi confirmada. Verifique se o arquivo JSON é válido.');}
   input.value=''
  };
  r.readAsText(f)
@@ -3341,14 +3401,14 @@ function publicTab(tab,btn){
   if(tab!=='overview' && !btn){const target=$('pub'+tab.charAt(0).toUpperCase()+tab.slice(1));if(target)target.scrollIntoView({behavior:'smooth',block:'start'});}
 }
 function teamStats(t){
-  const ms=db.matches.filter(m=>m.played!==false&&(m.phase||'group')==='group'&&(m.a===t.id||m.b===t.id));
+  const ms=db.matches.filter(m=>m.played!==false&&!m.annulled&&(m.phase||'group')==='group'&&(m.a===t.id||m.b===t.id));
   const s={j:0,v:0,e:0,d:0,gp:0,gc:0,pts:0,sg:0};
   ms.forEach(m=>{
     const isA=m.a===t.id, gf=Number(isA?m.sa:m.sb)||0, gc=Number(isA?m.sb:m.sa)||0;
     s.j++;s.gp+=gf;s.gc+=gc;
     if(gf>gc){s.v++;s.pts+=3}else if(gf===gc){s.e++;s.pts+=1}else s.d++;
   });
-  s.sg=s.gp-s.gc;
+  s.sg=s.gp-s.gc;s.pts-=teamPointPenalty(t.id);
   return s;
 }
 function classificationTable(group){
@@ -3547,7 +3607,7 @@ function renderPublicGames(){
   const games=[...db.matches].sort((a,b)=>Number(b.round||0)-Number(a.round||0));
   el.innerHTML=games.length?games.map(m=>{
     const a=db.teams.find(t=>t.id===m.a),b=db.teams.find(t=>t.id===m.b);
-    return `<div class="player"><span class="pill">${m.phase==='semi'?'Semifinal':m.phase==='final'?'Final':`Rodada ${m.round||1}`}</span> <b>${esc(a?.name||'Equipe A')}</b> <span class="scoreBig">${m.played===false?'—':`${m.sa} × ${m.sb}`}</span> <b>${esc(b?.name||'Equipe B')}</b>${m.played===false?'<br><span class="pubSmall">Partida ainda não encerrada</span>':''}${m.note?`<br><span class="pubSmall">${esc(m.note)}</span>`:''}</div>`;
+    return `<div class="player" style="${m.annulled?'opacity:.65;border-left:3px solid #ff6262':''}"><span class="pill">${m.annulled?'ANULADA':m.phase==='semi'?'Semifinal':m.phase==='final'?'Final':`Rodada ${m.round||1}`}</span> <b>${esc(a?.name||'Equipe A')}</b> <span class="scoreBig">${m.played===false?'—':`${m.sa} × ${m.sb}`}</span> <b>${esc(b?.name||'Equipe B')}</b>${m.annulled?`<br><span class="pubSmall">Partida anulada pela organização${m.annulReason?': '+esc(m.annulReason):''} — não conta na classificação.</span>`:m.played===false?'<br><span class="pubSmall">Partida ainda não encerrada</span>':''}${m.note?`<br><span class="pubSmall">${esc(m.note)}</span>`:''}</div>`;
   }).join(''):'<span class="sub">Nenhuma partida cadastrada.</span>';
 }
 function renderPublicTeams(){
