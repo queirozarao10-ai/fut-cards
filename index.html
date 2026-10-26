@@ -2781,7 +2781,9 @@ function knockoutWinner(m){if(!m)return null;if(Number(m.sa)>Number(m.sb))return
 function generateKnockout(){
   const A=teamStandings('A'),B=teamStandings('B');
   if(A.length<4||B.length<4){alert('Cadastre 4 equipes em cada grupo primeiro.');return}
-  const incomplete=[...A,...B].some(x=>x.J<3);if(incomplete){alert('Finalize os 3 jogos de cada equipe na fase de grupos antes de gerar as semifinais.');return}
+  // Partidas anuladas não contam como jogos pendentes. Bloqueia somente se ainda houver partida válida da fase de grupos sem resultado.
+  const pending=db.matches.some(m=>(m.phase||'group')==='group'&&!m.annulled&&m.played===false);
+  if(pending){alert('Ainda há partidas válidas da fase de grupos sem resultado. Registre os resultados pendentes antes de gerar as semifinais. Partidas anuladas não bloqueiam esta etapa.');return}
   const pairs=[[A[0].t.id,B[1].t.id,'Semifinal 1'],[B[0].t.id,A[1].t.id,'Semifinal 2']];
   pairs.forEach((x,i)=>{if(!db.matches.some(m=>(m.phase==='semi')&&((m.a===x[0]&&m.b===x[1])||(m.a===x[1]&&m.b===x[0]))))db.matches.push({id:'m_semi_'+Date.now()+i,a:x[0],b:x[1],sa:0,sb:0,round:4,phase:'semi',note:x[2],played:false,date:new Date().toISOString()});});
   save();renderChampionship();render();toast('Semifinais geradas automaticamente!');
